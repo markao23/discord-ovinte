@@ -1,64 +1,54 @@
+const { Client, GatewayIntentBits } = require("discord.js");
 const express = require("express");
+
+// ==========================================
+// 1. SERVIDOR WEB (Para Render e UptimeRobot)
+// ==========================================
 const app = express();
+app.get("/", (req, res) => res.send("Bot Monitor está Vivo e Vigiando!"));
 
-// ⚠️ CUIDADO: Cole sua URL aqui, mas não compartilhe com mais ninguém!
-const webhookUrl =
-  "https://discord.com/api/webhooks/1496487271363252314/uHcpWMNCC50aIAdSyrYN_iDpUSia8p2flfbIBSvEbs44wDdiVyw0E-LHsIR25KVuNAE6";
+// O Render define a porta automaticamente na variável de ambiente PORT
+const port = process.env.PORT || 3000;
+app.listen(port, () => console.log(`Servidor Web rodando na porta ${port}`));
 
-async function enviarStatusBot(status) {
-  const isOnline = status === "ON";
-  const corHex = isOnline ? 0x00ff00 : 0xff0000;
-  const mensagem = isOnline
-    ? "Preparar os canhões! O bot está online e rodando 24/7! 🚢💣"
-    : "Recolher as velas! O bot foi desligado. ⚓💤";
+// ==========================================
+// 2. LÓGICA DO BOT DO DISCORD
+// ==========================================
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildPresences, // ESSENCIAL para ler status de online/offline
+  ],
+});
 
-  const data = {
-    content: "@everyone",
-    allowed_mentions: { parse: ["everyone"] },
-    embeds: [
-      {
-        title: `Status do Bot: ${status}`,
-        description: mensagem,
-        color: corHex,
-        timestamp: new Date().toISOString(),
-        footer: { text: "Captain Hook System" },
-      },
-    ],
-  };
+// Substitua pelos IDs reais
+const ID_DO_BOT_PRINCIPAL = "1475934513313091615";
+const ID_DO_CANAL_DE_AVISO = "1456704732159676478";
 
-  try {
-    const response = await fetch(webhookUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    });
+client.on("ready", () => {
+  console.log(`Bot Monitor logado como ${client.user.tag}!`);
+});
 
-    if (response.ok) {
-      console.log("✅ Mensagem com Embed enviada com sucesso!");
-    } else {
-      // Aqui está o truque: se o Discord recusar, ele vai mostrar o motivo!
-      const erroDiscord = await response.text();
-      console.error("❌ O Discord recusou a mensagem. Erro:", erroDiscord);
-    }
-  } catch (error) {
-    // Se cair aqui, provavlemente seu Node.js é antigo e não suporta o 'fetch'
-    console.error(
-      "⚠️ Erro fatal ao tentar enviar (Verifique sua versão do Node.js):",
-      error.message,
+// Evento que dispara sempre que alguém (ou algum bot) muda de status
+client.on("presenceUpdate", (oldPresence, newPresence) => {
+  // Verifica se a atualização de status veio do seu bot principal
+  if (!newPresence || newPresence.userId !== ID_DO_BOT_PRINCIPAL) return;
+
+  const canal = client.channels.cache.get(ID_DO_CANAL_DE_AVISO);
+  if (!canal) return;
+
+  // Define os status (se oldPresence for null, assume offline)
+  const statusAntigo = oldPresence ? oldPresence.status : "offline";
+  const statusNovo = newPresence.status;
+
+  // Lógica para avisar se caiu ou voltou
+  if (statusNovo === "offline" && statusAntigo !== "offline") {
+    canal.send(
+      `🚨 **ALERTA!** O bot principal acabou de ficar OFFLINE! <@SEU_ID_AQUI_SE_QUISER_SER_MARCADO>`,
     );
+  } else if (statusNovo !== "offline" && statusAntigo === "offline") {
+    canal.send(`✅ **UFA!** O bot principal voltou a ficar ONLINE!`);
   }
-}
-
-// ROTA DA WEB: Para o UptimeRobot
-app.get("/", (req, res) => {
-  res.send("O navio está navegando! 🏴‍☠️ (Servidor Online)");
 });
 
-// Ligar o Servidor Web e avisar o Discord
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`⚓ Servidor rodando na porta ${PORT}`);
-
-  // Envia a mensagem pro Discord
-  enviarStatusBot("ON");
-});
+client.login(process.env.TOKEN);
