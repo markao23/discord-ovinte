@@ -25,7 +25,7 @@ const client = new Client({
 const ID_DO_BOT_PRINCIPAL = "1475934513313091615";
 const ID_DO_CANAL_DE_AVISO = "1456704732159676478";
 
-client.on("ready", () => {
+client.once("ready", () => {
   console.log(`Bot Monitor logado como ${client.user.tag}!`);
 });
 
@@ -52,11 +52,5 @@ client.on("presenceUpdate", (oldPresence, newPresence) => {
 });
 
 // Adicionando capturadores de erro para descobrirmos o problema
-client.login(process.env.DISCORD_TOKEN).catch((erro) => {
-  console.error("🚨 ERRO FATAL AO TENTAR LOGAR NO DISCORD:");
-  console.error(erro);
-});
+client.login(process.env.TOKEN); // Ou o nome da variável que você usou no Render
 
-client.on("error", erro => {
-    console.error("🚨 O bot encontrou um erro:", erro);
-});
