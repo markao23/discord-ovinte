@@ -51,4 +51,12 @@ client.on("presenceUpdate", (oldPresence, newPresence) => {
   }
 });
 
-client.login(process.env.TOKEN);
+// Adicionando capturadores de erro para descobrirmos o problema
+client.login(process.env.TOKEN).catch(erro => {
+    console.error("🚨 ERRO FATAL AO TENTAR LOGAR NO DISCORD:");
+    console.error(erro);
+});
+
+client.on("error", erro => {
+    console.error("🚨 O bot encontrou um erro:", erro);
+});
