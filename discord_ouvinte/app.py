@@ -1,63 +1,100 @@
 import discord
 import os
 import asyncio
-import signal
 from keep_alive import keep_alive
 
 TOKEN = os.environ.get("DISCORD_TOKEN")
-canal_id = 1494127600350658621
-membros = 1494355178114257047
+CANAL_ID = 1494127600350658621
+MEMBROS_ID = 1494355178114257047  # Assumindo que seja um cargo (Role)
+
+# === ADICIONE O ID DO SEU BOT PRINCIPAL AQUI ===
+BOT_PRINCIPAL_ID = 1475934513313091615
+
+# Tempo em segundos que o Vigia vai esperar antes de avisar que o bot caiu
+TEMPO_ESPERA = 30
 
 
-class MyClient(discord.Client):
+class VigiaClient(discord.Client):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Variável para guardar a tarefa de contagem regressiva do offline
+        self.offline_task = None
+
     async def on_ready(self):
-        print(f"Logado como {self.user}")
-        canal = self.get_channel(canal_id)
-        if canal:
+        print(f"👁️ Bot Vigia logado como {self.user} e pronto para monitorar!")
+
+    async def on_presence_update(self, before, after):
+        # Ignora as atualizações se não for o nosso Bot Principal
+        if after.id != BOT_PRINCIPAL_ID:
+            return
+
+        canal = self.get_channel(CANAL_ID)
+        if not canal:
+            return
+
+        # LOGICA 1: O BOT FICOU ONLINE (Era offline e mudou para online/idle/dnd)
+        if (
+            before.status == discord.Status.offline
+            and after.status != discord.Status.offline
+        ):
+
+            # Se o bot caiu, mas voltou rápido antes do TEMPO_ESPERA acabar, cancelamos o aviso de queda!
+            if self.offline_task and not self.offline_task.done():
+                self.offline_task.cancel()
+                print("Bot voltou rápido! Aviso de queda cancelado.")
+
             embed = discord.Embed(
-                title="🟢 Bot Online!",
-                description="Acabei de ser ligado e estou pronto para ajudar!",
+                title="🟢 Bot Principal Online!",
+                description="O bot principal acabou de ligar e está operante!",
                 color=discord.Color.green(),
             )
-            await canal.send(content=f"<@{membros}>", embed=embed)
+            # Nota: <@&ID> é para mencionar cargos. Se for um usuário específico use <@ID>
+            await canal.send(content=f"<@&{MEMBROS_ID}>", embed=embed)
+            print("Aviso de ONLINE enviado.")
 
-    async def setup_hook(self):
-        # Esta função pode ser usada para configurações iniciais se necessário
-        pass
+        # LOGICA 2: O BOT FICOU OFFLINE
+        elif (
+            before.status != discord.Status.offline
+            and after.status == discord.Status.offline
+        ):
+            print(
+                "Bot principal parece ter caído. Iniciando contagem de verificação..."
+            )
 
-    async def desligar_com_aviso(self):
-        """Função para enviar a mensagem de offline antes de fechar"""
-        canal = self.get_channel(canal_id)
-        if canal:
+            # Cria uma "tarefa em segundo plano" para esperar e avisar
+            self.offline_task = asyncio.create_task(self.verificar_offline_real(canal))
+
+    async def verificar_offline_real(self, canal):
+        try:
+            # Espera o tempo definido para ver se foi apenas um restart rápido
+            await asyncio.sleep(TEMPO_ESPERA)
+
+            # Se o código chegou até aqui sem ser cancelado, o bot principal realmente caiu
             embed = discord.Embed(
-                title="🔴 Bot Offline",
-                description="Estou sendo desligado para manutenção ou reinicialização.",
+                title="🔴 Bot Principal Offline",
+                description=f"O bot principal foi desligado ou caiu.\n*(Confirmado após {TEMPO_ESPERA} segundos de inatividade)*",
                 color=discord.Color.red(),
             )
-            try:
-                await canal.send(content=f"<@{membros}>", embed=embed)
-                print("Mensagem de offline enviada!")
-            except Exception as e:
-                print(f"Erro ao enviar mensagem de offline: {e}")
+            await canal.send(content=f"<@&{MEMBROS_ID}>", embed=embed)
+            print("Aviso de OFFLINE enviado.")
 
-        # Fecha a conexão do bot de forma limpa
-        await self.close()
+        except asyncio.CancelledError:
+            # Esse erro é gerado de propósito lá no bloco 'ONLINE' se o bot voltar a tempo.
+            # Apenas ignoramos em silêncio.
+            pass
 
 
-# Configuração de Intents
+# Configuração de Intents (MUITO IMPORTANTE ativar presences e members)
 intents = discord.Intents.default()
-client = MyClient(intents=intents)
+intents.members = True
+intents.presences = True
 
-# Inicia o servidor do keep_alive
+client = VigiaClient(intents=intents)
+
+# Inicia o servidor do keep_alive (se você usa Flask no Replit, por exemplo)
 keep_alive()
 
 try:
-    # Rodar o bot
     client.run(TOKEN)
-except KeyboardInterrupt:
-    # Captura quando você aperta Ctrl+C no terminal
-    print("Desligando via terminal...")
-finally:
-    # Nota: Em ambientes como Replit, o 'finally' pode não rodar se o processo
-    # for morto brutalmente (SIGKILL). Mas para desligamentos normais, funciona.
-    print("Bot encerrado.")
+except Exception as e:
+    print(f"Erro fatal no Vigia: {e}")
